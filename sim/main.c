@@ -7,9 +7,12 @@
  * Example commands — add yours here or in separate files
  * ----------------------------------------------------------------------- */
 
-CLI_CMD(ping, "reply with pong") { CLI_PUTS("pong\r\n"); }
+CLI_CMD(ping, "check alive") { CLI_PUTS("pong\r\n"); }
 
-CLI_CMD(quit, "exit the simulator") { CLI_PUTS("bye\r\n"); exit(0); }
+CLI_CMD(quit, "exit the simulator") {
+  CLI_PUTS("bye\r\n");
+  exit(0);
+}
 
 CLI_CMD(echo, "echo arguments back") {
   for (int i = 1; i < argc; i++) {
