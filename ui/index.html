@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Embedded CLI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --surface2: #1c2128;
+      --border:   #30363d;
+      --text:     #c9d1d9;
+      --muted:    #8b949e;
+      --accent:   #58a6ff;
+      --green:    #3fb950;
+      --red:      #f85149;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+    }
+
+    #app {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      height: 100vh;
+    }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #sidebar-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    #sidebar-header h1 {
+      font-size: 13px;
+      font-weight: 600;
+      flex: 1;
+      color: var(--text);
+    }
+
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #status-dot.connected { background: var(--green); }
+
+    #sidebar-label {
+      padding: 10px 16px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    #commands {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 8px 8px;
+    }
+
+    #commands::-webkit-scrollbar { width: 4px; }
+    #commands::-webkit-scrollbar-track { background: transparent; }
+    #commands::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .cmd-card {
+      padding: 9px 12px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      margin-bottom: 3px;
+      transition: background 0.12s, border-color 0.12s;
+      user-select: none;
+    }
+    .cmd-card:hover  { background: var(--surface2); border-color: var(--border); }
+    .cmd-card:active { opacity: 0.65; }
+
+    .cmd-name {
+      font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+    .cmd-help {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .cmd-placeholder {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+
+    /* ---- Main ---- */
+    #main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    #main-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #main-header .dot { color: var(--border); }
+
+    #terminal-wrap {
+      flex: 1;
+      padding: 10px 12px;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #terminal { height: 100%; }
+
+    #input-bar {
+      flex-shrink: 0;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #cmd-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      color: var(--text);
+      font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+      min-width: 0;
+    }
+    #cmd-input:focus   { border-color: var(--accent); }
+    #cmd-input::placeholder { color: var(--muted); }
+
+    #send-btn {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.12s;
+      flex-shrink: 0;
+    }
+    #send-btn:hover  { opacity: 0.85; }
+    #send-btn:active { opacity: 0.65; }
+
+    #cmd-input:disabled,
+    #send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h1>Embedded CLI</h1>
+      <div id="status-dot" title="Disconnected"></div>
+    </div>
+    <div id="sidebar-label">Commands</div>
+    <div id="commands">
+      <div class="cmd-placeholder">Connecting…</div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="main-header">
+      Terminal <span class="dot">·</span> cli_sim
+    </div>
+    <div id="terminal-wrap">
+      <div id="terminal"></div>
+    </div>
+    <div id="input-bar">
+      <input id="cmd-input" type="text" placeholder="type a command and press Enter…" disabled autocomplete="off" spellcheck="false">
+      <button id="send-btn" disabled>Send</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<script>
+const WS_URL = 'ws://localhost:8765';
+
+// ---- Terminal setup -------------------------------------------------------
+
+const term = new Terminal({
+  disableStdin: true,
+  convertEol: true,
+  scrollback: 5000,
+  fontFamily: "'SF Mono', ui-monospace, Menlo, Consolas, monospace",
+  fontSize: 13,
+  lineHeight: 1.45,
+  theme: {
+    background:          '#0d1117',
+    foreground:          '#c9d1d9',
+    cursor:              '#58a6ff',
+    selectionBackground: '#30363d',
+    black:    '#484f58', brightBlack:   '#6e7681',
+    red:      '#f85149', brightRed:     '#ff7b72',
+    green:    '#3fb950', brightGreen:   '#56d364',
+    yellow:   '#d29922', brightYellow:  '#e3b341',
+    blue:     '#58a6ff', brightBlue:    '#79c0ff',
+    magenta:  '#bc8cff', brightMagenta: '#d2a8ff',
+    cyan:     '#39c5cf', brightCyan:    '#56d4dd',
+    white:    '#b1bac4', brightWhite:   '#f0f6fc',
+  },
+});
+
+const fitAddon = new FitAddon.FitAddon();
+term.loadAddon(fitAddon);
+term.open(document.getElementById('terminal'));
+fitAddon.fit();
+window.addEventListener('resize', () => fitAddon.fit());
+
+// ---- Elements ------------------------------------------------------------
+
+const dot     = document.getElementById('status-dot');
+const cmdsDiv = document.getElementById('commands');
+const input   = document.getElementById('cmd-input');
+const sendBtn = document.getElementById('send-btn');
+
+// ---- State ---------------------------------------------------------------
+
+function setConnected(ok) {
+  dot.className = ok ? 'connected' : '';
+  dot.title = ok ? 'Connected' : 'Disconnected';
+  input.disabled   = !ok;
+  sendBtn.disabled = !ok;
+  if (ok) input.focus();
+}
+
+function renderCommands(cmds) {
+  cmdsDiv.innerHTML = '';
+  if (!cmds.length) {
+    cmdsDiv.innerHTML = '<div class="cmd-placeholder">No commands found.</div>';
+    return;
+  }
+  cmds.forEach(cmd => {
+    const card = document.createElement('div');
+    card.className = 'cmd-card';
+    card.innerHTML =
+      `<div class="cmd-name">${escHtml(cmd.name)}</div>` +
+      `<div class="cmd-help">${escHtml(cmd.help || '')}</div>`;
+    card.addEventListener('click', () => {
+      input.value = cmd.name + ' ';
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    cmdsDiv.appendChild(card);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ---- Send ----------------------------------------------------------------
+
+function sendCmd(text) {
+  const val = text.trim();
+  if (!val || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'input', data: val + '\r\n' }));
+}
+
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    sendCmd(input.value);
+    input.value = '';
+  }
+});
+
+sendBtn.addEventListener('click', () => {
+  sendCmd(input.value);
+  input.value = '';
+  input.focus();
+});
+
+// ---- WebSocket -----------------------------------------------------------
+
+let ws;
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => setConnected(true);
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'output') {
+      term.write(msg.data);
+    } else if (msg.type === 'commands') {
+      renderCommands(msg.data);
+    }
+  };
+
+  ws.onclose = () => {
+    setConnected(false);
+    cmdsDiv.innerHTML =
+      '<div class="cmd-placeholder">Disconnected.<br>Retrying…</div>';
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+connect();
+</script>
+</body>
+</html>

@@ -1,50 +1,60 @@
 /*
- * Example: bare-metal usage with RX/TX ring buffers.
+ * Example: STM32 HAL bare-metal usage.
  *
- * The UART ISR and the CLI logic are fully decoupled:
- *   - RX ISR  → cli_rx_push()     (feed bytes in)
- *   - TX ISR  ← cli_tx_pop()      (drain bytes out)
- *   - Main loop → cli_process()   (parse lines, dispatch commands)
+ * Recommended file layout in your project:
+ *
+ *   uart.c      — owns g_cli, contains the ISR          (this file)
+ *   main.c      — calls cli_init() and cli_process()
+ *   commands.c  — CLI_CMD definitions
+ *
+ * Only uart.c and main.c need to know about g_cli.
+ * Command files just include cli.h and use CLI_PUTS/CLI_PUTC.
  */
 
 #include "cli.h"
 
-static cli_t g_cli;
+/* -----------------------------------------------------------------------
+ * g_cli lives here, next to the ISR that feeds it.
+ * main.c and other files access it via:  extern cli_t g_cli;
+ * ----------------------------------------------------------------------- */
+cli_t g_cli;
 
 /* -----------------------------------------------------------------------
- * Called once when the TX buffer goes from empty → non-empty.
- * Enable the TXE interrupt (or kick a DMA transfer) here so the ISR
- * starts draining the buffer.
+ * uart_tx_start — called once when the TX buffer goes empty → non-empty.
+ * Enable the TXE interrupt so the ISR starts draining the buffer.
  * ----------------------------------------------------------------------- */
 static void uart_tx_start(void)
 {
-    /* e.g. __HAL_UART_ENABLE_IT(&huart2, UART_IT_TXE); */
+    __HAL_UART_ENABLE_IT(&huart2, UART_IT_TXE);
 }
 
 /* -----------------------------------------------------------------------
- * UART RX interrupt — push each received byte into the CLI RX buffer.
+ * USART2_IRQHandler
+ *
+ * RX path: push each received byte into the CLI RX buffer.
+ * TX path: drain the CLI TX buffer one byte at a time; disable the
+ *          interrupt when the buffer empties so uart_tx_start() can
+ *          re-enable it on the next write.
  * ----------------------------------------------------------------------- */
 void USART2_IRQHandler(void)
 {
-    /* RX: byte received */
-    /* if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE)) { */
-    /*     uint8_t byte = (uint8_t)huart2.Instance->DR;   */
-    /*     cli_rx_push(&g_cli, byte);                     */
-    /* }                                                  */
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE)) {
+        cli_rx_push(&g_cli, (uint8_t)huart2.Instance->DR);
+    }
 
-    /* TX: register empty — send next byte or disable the interrupt */
-    /* if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TXE)) {            */
-    /*     uint8_t byte;                                             */
-    /*     if (cli_tx_pop(&g_cli, &byte)) {                         */
-    /*         huart2.Instance->DR = byte;                          */
-    /*     } else {                                                  */
-    /*         __HAL_UART_DISABLE_IT(&huart2, UART_IT_TXE);         */
-    /*     }                                                        */
-    /* }                                                            */
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TXE) &&
+        __HAL_UART_GET_IT_SOURCE(&huart2, UART_IT_TXE)) {
+        uint8_t byte;
+        if (cli_tx_pop(&g_cli, &byte)) {
+            huart2.Instance->DR = byte;
+        } else {
+            __HAL_UART_DISABLE_IT(&huart2, UART_IT_TXE);
+        }
+    }
 }
 
 /* -----------------------------------------------------------------------
- * Commands
+ * Commands — can also live in a separate commands.c file.
  * ----------------------------------------------------------------------- */
 
 CLI_CMD(ping, "reply with pong")
@@ -62,17 +72,21 @@ CLI_CMD(echo, "echo arguments back")
 }
 
 /* -----------------------------------------------------------------------
- * Main loop
+ * main.c (shown here for completeness, normally a separate file)
  * ----------------------------------------------------------------------- */
+
+extern cli_t g_cli;
 
 int main(void)
 {
-    /* hardware_init(); */
+    HAL_Init();
+    SystemClock_Config();
+    MX_USART2_UART_Init();
 
     cli_init(&g_cli, uart_tx_start);
 
     while (1) {
-        cli_process(&g_cli);   /* drains RX buffer, dispatches commands */
-        /* other_task(); */
+        cli_process(&g_cli);
+        /* other application tasks */
     }
 }
