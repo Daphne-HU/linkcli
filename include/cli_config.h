@@ -23,7 +23,7 @@
 
 /* Set to 1 to echo received characters back to the terminal */
 #ifndef CLI_ECHO
-#define CLI_ECHO 1
+#define CLI_ECHO 0
 #endif
 
 #endif /* CLI_CONFIG_H */
