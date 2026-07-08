@@ -32,11 +32,6 @@ static void tx_push(cli_t *cli, uint8_t byte)
  * Internal dispatch
  * ----------------------------------------------------------------------- */
 
-static void print_prompt(cli_t *cli)
-{
-    cli_puts(cli, CLI_PROMPT);
-}
-
 static void dispatch(cli_t *cli)
 {
     if (cli->line_len == 0) {
@@ -107,7 +102,6 @@ void cli_init(cli_t *cli, void (*tx_start_fn)(void))
     cli->tx.buf      = cli->tx_buf;
     cli->tx.size     = CLI_TX_BUF_SIZE;
     _cli_instance    = cli;
-    print_prompt(cli);
 }
 
 void cli_process(cli_t *cli)
@@ -126,7 +120,6 @@ void cli_process(cli_t *cli)
             dispatch(cli);
             cli->line_len = 0;
             memset(cli->line_buf, 0, sizeof(cli->line_buf));
-            print_prompt(cli);
 
         } else if (ch == '\b' || ch == 0x7F) {
             if (cli->line_len > 0) {
@@ -174,6 +167,15 @@ void cli_rx_push(cli_t *cli, uint8_t byte)
 int cli_tx_pop(cli_t *cli, uint8_t *byte)
 {
     return rb_pop(&cli->tx, byte);
+}
+
+void cli_cmd_foreach(void (*cb)(const char *name, const char *help, void *ctx), void *ctx)
+{
+    const cli_cmd_t *cmd = &__start_cli_cmds;
+    while (cmd < &__stop_cli_cmds) {
+        cb(cmd->name, cmd->help ? cmd->help : "", ctx);
+        cmd++;
+    }
 }
 
 uint16_t cli_tx_available(cli_t *cli)

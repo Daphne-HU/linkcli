@@ -18,9 +18,9 @@ extern "C" {
  * Usage:
  *   Define a buffer with RB_DEF, then pass its address to the rb_* API.
  *
- *   RB_DEF(uart_rx, 64);           // declares uart_rx_rb_t + uart_rx_rb
- *   rb_push(&uart_rx_rb, byte);    // from ISR
- *   rb_pop(&uart_rx_rb, &byte);    // from main loop
+ *   RB_DEF(sensor_rx, 64);           // declares sensor_rx_buf + sensor_rx_rb
+ *   rb_push(&sensor_rx_rb, byte);   // from ISR or peripheral callback
+ *   rb_pop(&sensor_rx_rb, &byte);   // from main loop
  */
 
 /* -----------------------------------------------------------------------
@@ -41,9 +41,9 @@ typedef struct {
  * descriptor — all at file scope, zero dynamic allocation.
  *
  * Example:
- *   RB_DEF(uart_rx, 64);
- *   // creates: uint8_t uart_rx_buf[64];
- *   //          ring_buffer_t uart_rx_rb = { uart_rx_buf, 64, 0, 0 };
+ *   RB_DEF(sensor_rx, 64);
+ *   // creates: uint8_t sensor_rx_buf[64];
+ *   //          ring_buffer_t sensor_rx_rb = { sensor_rx_buf, 64, 0, 0 };
  * ----------------------------------------------------------------------- */
 #define RB_DEF(name, capacity)                          \
     static uint8_t     name##_buf[capacity];            \

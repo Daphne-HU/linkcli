@@ -27,34 +27,16 @@ SCRIPT_DIR = Path(__file__).parent
 SIM_BIN    = SCRIPT_DIR.parent / "sim" / "cli_sim"
 HTTP_PORT  = 8080
 WS_PORT    = 8765
-PROMPT     = b'> '
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def read_until(stream, sentinel, timeout=3.0):
-    """Accumulate bytes from stream until sentinel appears at the tail."""
-    buf = bytearray()
-    async def _read():
-        while not buf.endswith(sentinel):
-            byte = await stream.read(1)
-            if not byte:
-                break
-            buf.extend(byte)
-    await asyncio.wait_for(_read(), timeout=timeout)
-    return bytes(buf)
 
-
-def parse_commands(text):
-    """Turn 'help' output into [{name, help}, ...] dicts."""
-    cmds = []
-    for line in text.splitlines():
-        m = re.match(r'^\s+(\S+)\s+-\s+(.*)', line)
-        if m:
-            cmds.append({'name': m.group(1), 'help': m.group(2).strip()})
-    return cmds
+def get_commands():
+    """Run cli_sim --list-cmds to get the command list as JSON without touching the live stream."""
+    import subprocess, json
+    result = subprocess.run([str(SIM_BIN), '--list-cmds'], capture_output=True, text=True, timeout=3)
+    return json.loads(result.stdout)
 
 
 # ---------------------------------------------------------------------------
@@ -77,20 +59,14 @@ async def broadcast(msg: str):
 async def start_sim():
     global proc, commands
 
+    # Get command list from a separate one-shot run — does not touch the live stream
+    commands = get_commands()
+
     proc = await asyncio.create_subprocess_exec(
         str(SIM_BIN),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
     )
-
-    # Consume the initial prompt
-    await read_until(proc.stdout, PROMPT)
-
-    # Ask for the command list
-    proc.stdin.write(b'help\r\n')
-    await proc.stdin.drain()
-    raw = await read_until(proc.stdout, PROMPT)
-    commands = parse_commands(raw.decode(errors='replace'))
 
 
 async def output_loop():

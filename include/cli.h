@@ -23,7 +23,7 @@ typedef struct {
  * ----------------------------------------------------------------------- */
 typedef struct {
     /* Optional: called once when the TX buffer transitions empty → non-empty.
-     * Use this to kick off a DMA transfer or enable the TXE interrupt.
+     * Use this to kick off a transfer on whatever peripheral you are using.
      * Set to NULL if you poll cli_tx_pop() instead.                       */
     void (*tx_start_fn)(void);
 
@@ -86,11 +86,15 @@ extern cli_t *_cli_instance;
  * Init & main-loop API
  * ----------------------------------------------------------------------- */
 
-/**
- * Initialise the CLI and queue the first prompt into the TX buffer.
- * tx_start_fn may be NULL (polling mode).
- */
+/** Initialise the CLI. tx_start_fn may be NULL (polling mode). */
 void cli_init(cli_t *cli, void (*tx_start_fn)(void));
+
+/**
+ * Iterate all registered commands.
+ * Calls cb(name, help, ctx) once per command in section order.
+ * Useful for tooling (e.g. --list-cmds in a host simulator).
+ */
+void cli_cmd_foreach(void (*cb)(const char *name, const char *help, void *ctx), void *ctx);
 
 /**
  * Drain the RX buffer and process any complete lines.
@@ -110,14 +114,14 @@ void cli_putc(cli_t *cli, char c);
 
 /**
  * Push one received byte into the RX buffer.
- * Safe to call from a UART RX ISR or DMA callback.
+ * Safe to call from any RX ISR or peripheral callback (UART, I2C, SPI, USB, ...).
  * Sends '!' into the TX buffer if the RX buffer is full.
  */
 void cli_rx_push(cli_t *cli, uint8_t byte);
 
 /**
  * Pop one byte from the TX buffer.
- * Safe to call from a UART TX-complete ISR or DMA callback.
+ * Safe to call from any TX-complete ISR or peripheral callback.
  * Returns 1 and writes *byte if data is available, 0 if the buffer is empty.
  */
 int cli_tx_pop(cli_t *cli, uint8_t *byte);

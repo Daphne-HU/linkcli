@@ -15,6 +15,7 @@ project(embedded_cli C CXX)
 
 add_library(embedded_cli STATIC
     src/cli.c
+    src/log.c
     src/ring_buffer.c
 )
 

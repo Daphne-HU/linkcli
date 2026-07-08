@@ -21,11 +21,6 @@
 #define CLI_TX_BUF_SIZE 128
 #endif
 
-/* Prompt string printed before each input line */
-#ifndef CLI_PROMPT
-#define CLI_PROMPT "> "
-#endif
-
 /* Set to 1 to echo received characters back to the terminal */
 #ifndef CLI_ECHO
 #define CLI_ECHO 1
