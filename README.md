@@ -200,7 +200,6 @@ embedded code and does not affect the firmware binary.
 include/
   cli.h             — public C API + CLI_CMD() macro (ring buffer built in)
   cli_config.h      — configurable #defines
-  cli_cpp.hpp       — C++ wrapper
 src/
   cli.c             — CLI implementation
 ui/
@@ -208,8 +207,6 @@ ui/
   index.html        — web debug interface
 docs/
   linker_snippet.ld — copy-paste section stanza for your linker script
-examples/
-  example_usage.c
 ```
 
 ## Adding history / tab completion
