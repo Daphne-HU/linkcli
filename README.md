@@ -1,4 +1,4 @@
-# Generic Embedded CLI
+# Link CLI
 
 A lightweight, transport-agnostic command-line interface for embedded systems.
 
