@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include "cli_config.h"
-#include "ring_buffer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,12 +10,30 @@ extern "C" {
 
 /* -----------------------------------------------------------------------
  * Command descriptor — do not fill this manually, use CLI_CMD().
+ *
+ * Only the name and handler live on the device. The help string passed to
+ * CLI_CMD() is source-level documentation: tooling (ui/server.py, grep)
+ * harvests it from the sources; it is never compiled in.
  * ----------------------------------------------------------------------- */
 typedef struct {
     const char *name;
     void (*handler)(int argc, char *argv[]);
-    const char *help;
 } cli_cmd_t;
+
+/* -----------------------------------------------------------------------
+ * Internal byte ring — single-producer / single-consumer.
+ *
+ * Safe with one writer in an ISR and one reader in the main loop (or vice
+ * versa) without a critical section, provided 16-bit aligned stores are
+ * naturally atomic on the target. Implementation detail of cli_t — use
+ * the cli_* API, not this struct.
+ * ----------------------------------------------------------------------- */
+typedef struct {
+    uint8_t          *buf;
+    uint16_t          size;
+    volatile uint16_t head;   /* writer advances head */
+    volatile uint16_t tail;   /* reader advances tail */
+} cli_ring_t;
 
 /* -----------------------------------------------------------------------
  * CLI instance — declare as a static global, then call cli_init().
@@ -27,8 +44,8 @@ typedef struct {
      * Set to NULL if you poll cli_tx_pop() instead.                       */
     void (*tx_start_fn)(void);
 
-    ring_buffer_t rx;
-    ring_buffer_t tx;
+    cli_ring_t rx;
+    cli_ring_t tx;
     uint8_t       rx_buf[CLI_RX_BUF_SIZE];
     uint8_t       tx_buf[CLI_TX_BUF_SIZE];
 
@@ -57,11 +74,13 @@ typedef struct {
 #  define _CLI_CMD_SECTION  ".cli_cmds"
 #endif
 
+/* help_str is intentionally unused: it stays in the source for tooling to
+ * harvest but is not stored on the device. */
 #define CLI_CMD(cmd_name, help_str)                                      \
     static void _cli_handler_##cmd_name(int argc, char *argv[]);        \
     static const cli_cmd_t _cli_cmd_##cmd_name                          \
     __attribute__((section(_CLI_CMD_SECTION), used)) =                  \
-    { #cmd_name, _cli_handler_##cmd_name, help_str };                   \
+    { #cmd_name, _cli_handler_##cmd_name };                             \
     static void _cli_handler_##cmd_name(                                \
         int argc __attribute__((unused)),                               \
         char *argv[] __attribute__((unused)))
@@ -91,10 +110,10 @@ void cli_init(cli_t *cli, void (*tx_start_fn)(void));
 
 /**
  * Iterate all registered commands.
- * Calls cb(name, help, ctx) once per command in section order.
+ * Calls cb(name, ctx) once per command in section order.
  * Useful for tooling (e.g. --list-cmds in a host simulator).
  */
-void cli_cmd_foreach(void (*cb)(const char *name, const char *help, void *ctx), void *ctx);
+void cli_cmd_foreach(void (*cb)(const char *name, void *ctx), void *ctx);
 
 /**
  * Drain the RX buffer and process any complete lines.

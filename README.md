@@ -4,7 +4,7 @@ A lightweight, transport-agnostic command-line interface for embedded systems.
 
 - **Zero dynamic allocation** — all buffers are static
 - **Transport-agnostic** — plug in your own ISR callbacks, no UART driver included
-- **Linker-section command registration** — `CLI_CMD()` macro, commands gathered at link time (no central table to maintain)
+- **Linker-section command registration** — `CLI_CMD()` macro, commands gathered at link time (no central table to maintain); only name + handler stored on the device, help strings stay in the sources for tooling
 - **Decoupled RX/TX ring buffers** — peripheral callbacks and CLI logic never block each other
 - **C99 core** with a thin C++ wrapper
 - **Configurable** buffer sizes via `#define`
@@ -111,7 +111,7 @@ CLI_CMD(echo, "echo arguments back") {
 }
 ```
 
-`argc` and `argv[]` are in scope inside the block. `CLI_PUTS` accepts 1–4 strings and expands to individual calls at compile time — zero runtime overhead. The built-in `help` command lists all registered commands automatically.
+`argc` and `argv[]` are in scope inside the block. `CLI_PUTS` accepts 1–4 strings and expands to individual calls at compile time — zero runtime overhead. The help string is source-level documentation only: tooling (`ui/server.py`) scans the sources for it; it is never stored on the device.
 
 ## Configuration
 
@@ -135,13 +135,6 @@ The library has no knowledge of any specific peripheral. You wire these function
 | `cli_tx_pop(cli, &byte)` | TX callback | Pop one byte to transmit. Returns 0 when buffer empty. |
 | `cli_tx_available(cli)` | anywhere | Number of bytes waiting in the TX buffer. |
 
-CLI and logging can run on **different peripherals** — each has its own independent TX buffer and `tx_start_fn`:
-
-```c
-cli_init(&g_cli, i2c_tx_start);    // CLI over I2C
-log_init(&g_log, uart_tx_start);   // logging over UART
-```
-
 ## C++ usage
 
 ```cpp
@@ -158,78 +151,6 @@ cli.process();
 
 The ISR stays in C and calls `cli_rx_push` / `cli_tx_pop` directly — it never needs to see the C++ class.
 
-## Logging
-
-The logger has its own TX ring buffer, independent from the CLI — they never block each other and can run on the same or different peripherals. CLI and logging are fully independent: each can be included, excluded, or configured separately.
-
-### Setup
-
-```c
-#include "log.h"
-
-log_t g_log;   // next to the peripheral driver that drains it
-
-// in main:
-log_init(&g_log, my_tx_start);
-```
-
-Drain the log TX buffer in your TX callback alongside the CLI (if they share the same peripheral):
-
-```c
-void on_tx_ready(void) {
-    uint8_t byte;
-    // drain CLI first, then log — or reverse the order for your priority needs
-    if      (cli_tx_pop(&g_cli, &byte)) { /* send byte */ }
-    else if (log_tx_pop(&g_log, &byte)) { /* send byte */ }
-    else    { /* both empty — stop TX */ }
-}
-```
-
-Or route them to completely separate peripherals:
-
-```c
-cli_init(&g_cli, i2c_tx_start);    // CLI over I2C
-log_init(&g_log, uart_tx_start);   // logging over UART
-```
-
-### Usage
-
-```c
-#include "log.h"
-
-LOG_ERROR("init failed\r\n");
-LOG_WARN("retry ", count_str, "\r\n");
-LOG_INFO("system ready\r\n");
-LOG_DEBUG("temp = ", temp_str, " C\r\n");
-```
-
-Each macro accepts 1–4 strings, expanded to individual writes at compile time — same as `CLI_PUTS`, zero overhead.
-
-### Log levels
-
-Set at build time. Everything above the threshold compiles out completely — no string in flash, no function call:
-
-```cmake
-target_compile_definitions(embedded_cli PUBLIC LOG_LEVEL=4)  # DEBUG and below
-target_compile_definitions(embedded_cli PUBLIC LOG_LEVEL=0)  # nothing
-```
-
-| `LOG_LEVEL` | Compiled in |
-|---|---|
-| `0` | nothing |
-| `1` | `LOG_ERROR` |
-| `2` | + `LOG_WARN` |
-| `3` | + `LOG_INFO` (default) |
-| `4` | + `LOG_DEBUG` |
-
-### Log TX buffer
-
-```cmake
-target_compile_definitions(embedded_cli PUBLIC LOG_TX_BUF_SIZE=512)
-```
-
-Default is 256 bytes. Size this based on how much log output you produce between ISR drain cycles.
-
 ## Integrating into your project
 
 The recommended way is as a **git submodule** so you can pull updates deliberately:
@@ -245,7 +166,7 @@ add_subdirectory(lib/embedded_cli)
 target_link_libraries(my_app PRIVATE embedded_cli)
 ```
 
-That single `target_link_libraries` line adds the include path and compiles both source files into your target. Override buffer sizes without touching this repo:
+That single `target_link_libraries` line adds the include path and compiles `cli.c` into your target. Override buffer sizes without touching this repo:
 
 ```cmake
 target_compile_definitions(embedded_cli PUBLIC
@@ -260,34 +181,30 @@ Clone a project that uses it:
 git clone --recurse-submodules <your project>
 ```
 
-## Host simulator
+## Web debug UI
 
-A PC-side simulator stubs the MCU so you can develop and test commands without hardware:
+A browser terminal that talks to your firmware over serial, with a sidebar
+listing every `CLI_CMD` found in your sources:
 
 ```bash
-cd sim && make
-python server.py          # requires: pip install websockets
+cd ui
+python server.py --src ~/my_project/app   # requires: pip install websockets pyserial
 ```
 
-Then open **http://localhost:8080** — a web UI shows all registered commands in a sidebar and connects to the simulator over WebSocket. The UI is completely separate from the embedded code and does not affect the firmware binary.
+Then open **http://localhost:8080**. The UI is completely separate from the
+embedded code and does not affect the firmware binary.
 
 ## Project layout
 
 ```
 include/
-  cli.h             — public C API + CLI_CMD() macro
+  cli.h             — public C API + CLI_CMD() macro (ring buffer built in)
   cli_config.h      — configurable #defines
   cli_cpp.hpp       — C++ wrapper
-  ring_buffer.h     — generic byte ring buffer (reusable)
 src/
   cli.c             — CLI implementation
-  ring_buffer.c     — ring buffer implementation
-sim/
-  main.c            — host simulator (add your commands here)
-  uart_stub.c/h     — raw-mode stdin/stdout as a UART stand-in
-  Makefile
 ui/
-  server.py         — spawns cli_sim, bridges stdio over WebSocket, serves UI
+  server.py         — bridges a serial port over WebSocket, serves UI
   index.html        — web debug interface
 docs/
   linker_snippet.ld — copy-paste section stanza for your linker script
