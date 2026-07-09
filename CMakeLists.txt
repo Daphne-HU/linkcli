@@ -1,23 +1,23 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(embedded_cli C CXX)
+project(linkcli C CXX)
 
 # -----------------------------------------------------------------------
 # Library target
 #
 # When used as a submodule:
-#   add_subdirectory(lib/embedded_cli)
-#   target_link_libraries(my_app PRIVATE embedded_cli)
+#   add_subdirectory(lib/linkcli)
+#   target_link_libraries(my_app PRIVATE linkcli)
 #
 # That one line adds the include path and compiles cli.c into your
 # target — nothing else needed. The ring buffer is built into the CLI.
 # -----------------------------------------------------------------------
 
-add_library(embedded_cli STATIC
+add_library(linkcli STATIC
     src/cli.c
 )
 
-target_include_directories(embedded_cli PUBLIC
+target_include_directories(linkcli PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
